@@ -9,20 +9,83 @@ set -euo pipefail
 # Read hook input from stdin (advanced stop hook API)
 HOOK_INPUT=$(cat)
 
-# Check if ralph-loop is active
-RALPH_STATE_FILE=".claude/ralph-loop.local.md"
+# Get cwd from hook input - this matches the pwd where setup script ran
+HOOK_CWD=$(echo "$HOOK_INPUT" | jq -r '.cwd // empty')
 
-if [[ ! -f "$RALPH_STATE_FILE" ]]; then
-  # No active loop - allow exit
+# Function to walk up directory tree to find ralph-loop.local.md
+# This handles cases where user cd's into a subdirectory after starting the loop
+find_ralph_state() {
+  local dir="$1"
+  while [[ "$dir" != "/" ]]; do
+    if [[ -f "$dir/.claude/ralph-loop.local.md" ]]; then
+      echo "$dir/.claude/ralph-loop.local.md"
+      return 0
+    fi
+    dir=$(dirname "$dir")
+  done
+  # Check root as well
+  if [[ -f "/.claude/ralph-loop.local.md" ]]; then
+    echo "/.claude/ralph-loop.local.md"
+    return 0
+  fi
+  return 1
+}
+
+# Use cwd from hook input, walking up tree to find state file
+if [[ -n "$HOOK_CWD" ]]; then
+  RALPH_STATE_FILE=$(find_ralph_state "$HOOK_CWD") || true
+else
+  # Fallback to shell's pwd (shouldn't happen normally)
+  RALPH_STATE_FILE=$(find_ralph_state "$(pwd)") || true
+fi
+
+if [[ -z "$RALPH_STATE_FILE" ]] || [[ ! -f "$RALPH_STATE_FILE" ]]; then
+  # No active loop found anywhere up the tree - allow exit
   exit 0
 fi
 
 # Parse markdown frontmatter (YAML between ---) and extract values
+# Note: Using || true to prevent set -e from exiting if grep finds no match
 FRONTMATTER=$(sed -n '/^---$/,/^---$/{ /^---$/d; p; }' "$RALPH_STATE_FILE")
-ITERATION=$(echo "$FRONTMATTER" | grep '^iteration:' | sed 's/iteration: *//')
-MAX_ITERATIONS=$(echo "$FRONTMATTER" | grep '^max_iterations:' | sed 's/max_iterations: *//')
+ITERATION=$(echo "$FRONTMATTER" | grep '^iteration:' | sed 's/iteration: *//' || true)
+MAX_ITERATIONS=$(echo "$FRONTMATTER" | grep '^max_iterations:' | sed 's/max_iterations: *//' || true)
 # Extract completion_promise and strip surrounding quotes if present
-COMPLETION_PROMISE=$(echo "$FRONTMATTER" | grep '^completion_promise:' | sed 's/completion_promise: *//' | sed 's/^"\(.*\)"$/\1/')
+COMPLETION_PROMISE=$(echo "$FRONTMATTER" | grep '^completion_promise:' | sed 's/completion_promise: *//' | sed 's/^"\(.*\)"$/\1/' || true)
+
+# Extract origin_cwd and session_id for session matching (prevents inheritance bug)
+ORIGIN_CWD=$(echo "$FRONTMATTER" | grep '^origin_cwd:' | sed 's/origin_cwd: *//' | tr -d '"' || true)
+STORED_SESSION=$(echo "$FRONTMATTER" | grep '^session_id:' | sed 's/session_id: *//' | tr -d '"' || true)
+
+# Get transcript path early for session matching
+TRANSCRIPT_PATH=$(echo "$HOOK_INPUT" | jq -r '.transcript_path')
+CURRENT_SESSION=$(basename "$TRANSCRIPT_PATH" .jsonl)
+
+# Session matching logic - prevents inheritance bug where parent directory
+# state files affect child directory sessions
+if [[ -n "$ORIGIN_CWD" ]]; then
+  if [[ -n "$STORED_SESSION" ]] && [[ "$STORED_SESSION" != "null" ]]; then
+    # Session already bound - verify current session matches
+    if [[ "$STORED_SESSION" != "$CURRENT_SESSION" ]]; then
+      # Different session - this state file doesn't belong to us, allow exit
+      exit 0
+    fi
+  else
+    # No session bound yet - only bind if in EXACT origin directory
+    if [[ "$HOOK_CWD" != "$ORIGIN_CWD" ]]; then
+      # We're in a different directory than where loop started
+      # This is likely a different session - don't claim this file, allow exit
+      exit 0
+    fi
+
+    # Bind current session to this state file (lazy binding)
+    TEMP_FILE="${RALPH_STATE_FILE}.tmp.$$"
+    sed "s/^session_id: .*/session_id: \"$CURRENT_SESSION\"/" "$RALPH_STATE_FILE" > "$TEMP_FILE"
+    mv "$TEMP_FILE" "$RALPH_STATE_FILE"
+
+    # Re-read frontmatter after update
+    FRONTMATTER=$(sed -n '/^---$/,/^---$/{ /^---$/d; p; }' "$RALPH_STATE_FILE")
+  fi
+fi
 
 # Validate numeric fields before arithmetic operations
 if [[ ! "$ITERATION" =~ ^[0-9]+$ ]]; then
@@ -54,9 +117,7 @@ if [[ $MAX_ITERATIONS -gt 0 ]] && [[ $ITERATION -ge $MAX_ITERATIONS ]]; then
   exit 0
 fi
 
-# Get transcript path from hook input
-TRANSCRIPT_PATH=$(echo "$HOOK_INPUT" | jq -r '.transcript_path')
-
+# Verify transcript file exists (TRANSCRIPT_PATH already extracted above for session matching)
 if [[ ! -f "$TRANSCRIPT_PATH" ]]; then
   echo "⚠️  Ralph loop: Transcript file not found" >&2
   echo "   Expected: $TRANSCRIPT_PATH" >&2

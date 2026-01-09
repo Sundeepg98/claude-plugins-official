@@ -5,10 +5,19 @@
 
 set -euo pipefail
 
+# Use current working directory for state file
+RALPH_STATE_DIR="$(pwd)/.claude"
+
 # Parse arguments
 PROMPT_PARTS=()
 MAX_ITERATIONS=0
 COMPLETION_PROMISE="null"
+
+# If RALPH_ARGS env var is set, use it instead of command line args
+# This allows passing arguments with special characters safely
+if [[ -n "${RALPH_ARGS:-}" ]]; then
+  set -- $RALPH_ARGS
+fi
 
 # Parse options and positional arguments
 while [[ $# -gt 0 ]]; do
