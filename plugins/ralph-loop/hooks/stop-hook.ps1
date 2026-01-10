@@ -90,9 +90,22 @@ if ($origin_cwd) {
             Allow-Exit
         }
     } else {
-        # Normalize paths for comparison
-        $norm_hook = $hook_cwd -replace '\\', '/'
-        $norm_origin = $origin_cwd -replace '\\', '/'
+        # Normalize paths for comparison (handle both Unix /d/... and Windows D:\...)
+        function Normalize-Path($p) {
+            $p = $p -replace '\\', '/'
+            # Convert /d/path to D:/path
+            if ($p -match '^/([a-zA-Z])/(.*)$') {
+                $p = "$($Matches[1].ToUpper()):/$($Matches[2])"
+            }
+            # Normalize D: to uppercase
+            if ($p -match '^([a-zA-Z]):') {
+                $p = $p.Substring(0,1).ToUpper() + $p.Substring(1)
+            }
+            return $p.TrimEnd('/')
+        }
+        $norm_hook = Normalize-Path $hook_cwd
+        $norm_origin = Normalize-Path $origin_cwd
+        Log "Normalized: hook=$norm_hook, origin=$norm_origin"
         if ($norm_hook -ne $norm_origin) {
             Log "Different CWD, allowing exit"
             Allow-Exit
