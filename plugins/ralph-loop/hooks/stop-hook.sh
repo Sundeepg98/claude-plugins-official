@@ -1,10 +1,20 @@
 #!/bin/bash
-set -euo pipefail
 
-# Helper to exit silently (allow exit, no blocking)
+# Log function for debugging
+log() {
+  echo "[$(date)] $1" >> /tmp/ralph-hook.log
+}
+
+log "Hook started"
+
+# Helper to exit (allow exit, no blocking)
 allow_exit() {
+  log "Allowing exit"
   exit 0
 }
+
+# Trap errors and log them
+trap 'log "ERROR at line $LINENO: $BASH_COMMAND"' ERR
 
 normalize_path() {
   local path="$1"
@@ -21,8 +31,12 @@ normalize_path() {
   echo "$path"
 }
 
+log "Reading stdin..."
 HOOK_INPUT=$(cat)
-HOOK_CWD=$(echo "$HOOK_INPUT" | jq -r '.cwd // empty')
+log "Got input: ${HOOK_INPUT:0:100}..."
+
+HOOK_CWD=$(echo "$HOOK_INPUT" | jq -r '.cwd // empty' 2>/dev/null) || HOOK_CWD=""
+log "CWD: $HOOK_CWD"
 
 find_ralph_state() {
   local dir="$1"
@@ -37,12 +51,19 @@ find_ralph_state() {
 }
 
 if [[ -n "$HOOK_CWD" ]]; then
+  log "Searching from: $HOOK_CWD"
   RALPH_STATE_FILE=$(find_ralph_state "$HOOK_CWD") || true
 else
+  log "Searching from: $(pwd)"
   RALPH_STATE_FILE=$(find_ralph_state "$(pwd)") || true
 fi
 
-[[ -z "$RALPH_STATE_FILE" ]] || [[ ! -f "$RALPH_STATE_FILE" ]] && allow_exit
+log "State file: ${RALPH_STATE_FILE:-none}"
+
+if [[ -z "$RALPH_STATE_FILE" ]] || [[ ! -f "$RALPH_STATE_FILE" ]]; then
+  log "No state file, exiting"
+  allow_exit
+fi
 
 FRONTMATTER=$(sed -n '/^---$/,/^---$/{ /^---$/d; p; }' "$RALPH_STATE_FILE")
 ITERATION=$(echo "$FRONTMATTER" | grep '^iteration:' | sed 's/iteration: *//' || true)
@@ -78,15 +99,12 @@ PROMPT=$(sed '1,/^---$/d' "$RALPH_STATE_FILE" | sed '1d')
 NEW_ITERATION=$((ITERATION + 1))
 sed -i "s/^iteration: .*/iteration: $NEW_ITERATION/" "$RALPH_STATE_FILE"
 
-# Check for completion promise in LAST ASSISTANT MESSAGE only (not entire transcript)
 if [[ -n "$COMPLETION_PROMISE" ]] && [[ "$COMPLETION_PROMISE" != "null" ]]; then
   TRANSCRIPT_UNIX=$(normalize_path "$TRANSCRIPT_PATH")
   if [[ -f "$TRANSCRIPT_UNIX" ]]; then
-    # Extract last assistant message
     if grep -q '"role":"assistant"' "$TRANSCRIPT_UNIX" 2>/dev/null; then
       LAST_LINE=$(grep '"role":"assistant"' "$TRANSCRIPT_UNIX" | tail -1)
       LAST_OUTPUT=$(echo "$LAST_LINE" | jq -r '.message.content | map(select(.type == "text")) | map(.text) | join("\n")' 2>/dev/null || echo "")
-      # Extract promise text using perl (handles multiline)
       if [[ -n "$LAST_OUTPUT" ]]; then
         PROMISE_TEXT=$(echo "$LAST_OUTPUT" | perl -0777 -pe 's/.*?<promise>(.*?)<\/promise>.*/$1/s; s/^\s+|\s+$//g; s/\s+/ /g' 2>/dev/null || echo "")
         if [[ -n "$PROMISE_TEXT" ]] && [[ "$PROMISE_TEXT" = "$COMPLETION_PROMISE" ]]; then
@@ -98,9 +116,11 @@ if [[ -n "$COMPLETION_PROMISE" ]] && [[ "$COMPLETION_PROMISE" != "null" ]]; then
   fi
 fi
 
-cat << EOF
+log "Blocking - iteration $NEW_ITERATION"
+
+cat << EOFBLOCK
 {
   "decision": "block",
   "reason": "🔄 Ralph Loop - Iteration $NEW_ITERATION of ${MAX_ITERATIONS:-∞}\n\n$PROMPT"
 }
-EOF
+EOFBLOCK
