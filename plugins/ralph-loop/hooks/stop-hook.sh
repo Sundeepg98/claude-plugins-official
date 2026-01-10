@@ -1,6 +1,12 @@
 #!/bin/bash
 set -euo pipefail
 
+# Helper to exit with "allow" decision (Claude Code expects JSON output)
+allow_exit() {
+  echo '{"decision": "allow"}'
+  allow_exit
+}
+
 normalize_path() {
   local path="$1"
   if [[ "$path" == /* ]]; then
@@ -37,7 +43,7 @@ else
   RALPH_STATE_FILE=$(find_ralph_state "$(pwd)") || true
 fi
 
-[[ -z "$RALPH_STATE_FILE" ]] || [[ ! -f "$RALPH_STATE_FILE" ]] && exit 0
+[[ -z "$RALPH_STATE_FILE" ]] || [[ ! -f "$RALPH_STATE_FILE" ]] && allow_exit
 
 FRONTMATTER=$(sed -n '/^---$/,/^---$/{ /^---$/d; p; }' "$RALPH_STATE_FILE")
 ITERATION=$(echo "$FRONTMATTER" | grep '^iteration:' | sed 's/iteration: *//' || true)
@@ -51,11 +57,11 @@ CURRENT_SESSION=$(basename "$TRANSCRIPT_PATH" .jsonl)
 
 if [[ -n "$ORIGIN_CWD" ]]; then
   if [[ -n "$STORED_SESSION" ]] && [[ "$STORED_SESSION" != "null" ]]; then
-    [[ "$STORED_SESSION" != "$CURRENT_SESSION" ]] && exit 0
+    [[ "$STORED_SESSION" != "$CURRENT_SESSION" ]] && allow_exit
   else
     NORMALIZED_HOOK_CWD=$(normalize_path "$HOOK_CWD")
     NORMALIZED_ORIGIN_CWD=$(normalize_path "$ORIGIN_CWD")
-    [[ "$NORMALIZED_HOOK_CWD" != "$NORMALIZED_ORIGIN_CWD" ]] && exit 0
+    [[ "$NORMALIZED_HOOK_CWD" != "$NORMALIZED_ORIGIN_CWD" ]] && allow_exit
     TEMP_FILE="${RALPH_STATE_FILE}.tmp.$$"
     sed "s/^session_id: .*/session_id: \"$CURRENT_SESSION\"/" "$RALPH_STATE_FILE" > "$TEMP_FILE"
     mv "$TEMP_FILE" "$RALPH_STATE_FILE"
@@ -63,10 +69,10 @@ if [[ -n "$ORIGIN_CWD" ]]; then
   fi
 fi
 
-[[ ! "$ITERATION" =~ ^[0-9]+$ ]] && { rm "$RALPH_STATE_FILE"; exit 0; }
+[[ ! "$ITERATION" =~ ^[0-9]+$ ]] && { rm "$RALPH_STATE_FILE"; allow_exit; }
 
 if [[ -n "$MAX_ITERATIONS" ]] && [[ "$MAX_ITERATIONS" != "null" ]] && [[ "$MAX_ITERATIONS" =~ ^[0-9]+$ ]]; then
-  [[ $ITERATION -ge $MAX_ITERATIONS ]] && { rm "$RALPH_STATE_FILE"; exit 0; }
+  [[ $ITERATION -ge $MAX_ITERATIONS ]] && { rm "$RALPH_STATE_FILE"; allow_exit; }
 fi
 
 PROMPT=$(sed '1,/^---$/d' "$RALPH_STATE_FILE" | sed '1d')
@@ -86,7 +92,7 @@ if [[ -n "$COMPLETION_PROMISE" ]] && [[ "$COMPLETION_PROMISE" != "null" ]]; then
         PROMISE_TEXT=$(echo "$LAST_OUTPUT" | perl -0777 -pe 's/.*?<promise>(.*?)<\/promise>.*/$1/s; s/^\s+|\s+$//g; s/\s+/ /g' 2>/dev/null || echo "")
         if [[ -n "$PROMISE_TEXT" ]] && [[ "$PROMISE_TEXT" = "$COMPLETION_PROMISE" ]]; then
           rm "$RALPH_STATE_FILE"
-          exit 0
+          allow_exit
         fi
       fi
     fi
