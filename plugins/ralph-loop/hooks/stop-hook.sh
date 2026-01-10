@@ -7,7 +7,7 @@ normalize_path() {
     echo "$path"
     return
   fi
-  path=$(echo "$path" | tr '\' '/')
+  path=$(echo "$path" | tr '\\' '/')
   if [[ "$path" =~ ^([A-Za-z]):/ ]]; then
     local drive="${BASH_REMATCH[1]}"
     drive=$(echo "$drive" | tr '[:upper:]' '[:lower:]')
