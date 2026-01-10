@@ -1,9 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-# Helper to exit with "allow" decision (Claude Code expects JSON output)
+# Helper to exit silently (allow exit, no blocking)
 allow_exit() {
-  echo '{"decision": "allow"}'
   exit 0
 }
 
