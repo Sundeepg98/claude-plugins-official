@@ -73,10 +73,23 @@ PROMPT=$(sed '1,/^---$/d' "$RALPH_STATE_FILE" | sed '1d')
 NEW_ITERATION=$((ITERATION + 1))
 sed -i "s/^iteration: .*/iteration: $NEW_ITERATION/" "$RALPH_STATE_FILE"
 
+# Check for completion promise in LAST ASSISTANT MESSAGE only (not entire transcript)
 if [[ -n "$COMPLETION_PROMISE" ]] && [[ "$COMPLETION_PROMISE" != "null" ]]; then
   TRANSCRIPT_UNIX=$(normalize_path "$TRANSCRIPT_PATH")
   if [[ -f "$TRANSCRIPT_UNIX" ]]; then
-    grep -q "<promise>$COMPLETION_PROMISE</promise>" "$TRANSCRIPT_UNIX" 2>/dev/null && { rm "$RALPH_STATE_FILE"; exit 0; }
+    # Extract last assistant message
+    if grep -q '"role":"assistant"' "$TRANSCRIPT_UNIX" 2>/dev/null; then
+      LAST_LINE=$(grep '"role":"assistant"' "$TRANSCRIPT_UNIX" | tail -1)
+      LAST_OUTPUT=$(echo "$LAST_LINE" | jq -r '.message.content | map(select(.type == "text")) | map(.text) | join("\n")' 2>/dev/null || echo "")
+      # Extract promise text using perl (handles multiline)
+      if [[ -n "$LAST_OUTPUT" ]]; then
+        PROMISE_TEXT=$(echo "$LAST_OUTPUT" | perl -0777 -pe 's/.*?<promise>(.*?)<\/promise>.*/$1/s; s/^\s+|\s+$//g; s/\s+/ /g' 2>/dev/null || echo "")
+        if [[ -n "$PROMISE_TEXT" ]] && [[ "$PROMISE_TEXT" = "$COMPLETION_PROMISE" ]]; then
+          rm "$RALPH_STATE_FILE"
+          exit 0
+        fi
+      fi
+    fi
   fi
 fi
 
