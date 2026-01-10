@@ -4,7 +4,7 @@ set -euo pipefail
 # Helper to exit with "allow" decision (Claude Code expects JSON output)
 allow_exit() {
   echo '{"decision": "allow"}'
-  allow_exit
+  exit 0
 }
 
 normalize_path() {
