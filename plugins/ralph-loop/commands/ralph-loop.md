@@ -10,7 +10,13 @@ hide-from-slash-command-tool: "true"
 Execute the setup script to initialize the Ralph loop:
 
 ```!
-RALPH_ARGS="$ARGUMENTS" "${CLAUDE_PLUGIN_ROOT}/scripts/setup-ralph-loop.sh"
+# ROBUST QUOTING FIX: Use heredoc to preserve quotes literally
+# This handles double quotes, single quotes, and special characters
+mkdir -p "${HOME}/.claude"
+cat > "${HOME}/.claude/.ralph-args.tmp" << 'RALPH_ARGS_EOF'
+$ARGUMENTS
+RALPH_ARGS_EOF
+"${CLAUDE_PLUGIN_ROOT}/scripts/setup-ralph-loop.sh"
 ```
 
 Please work on the task. When you try to exit, the Ralph loop will feed the SAME PROMPT back to you for the next iteration. You'll see your previous work in files and git history, allowing you to iterate and improve.

@@ -15,10 +15,21 @@ PROMPT_PARTS=()
 MAX_ITERATIONS=0
 COMPLETION_PROMISE="null"
 
-# If RALPH_ARGS env var is set, use it instead of command line args
-# This allows passing arguments with special characters safely
-if [[ -n "${RALPH_ARGS:-}" ]]; then
-  set -- $RALPH_ARGS
+# ROBUST QUOTING FIX: Read arguments from temp file created by heredoc
+# This preserves all quoting (double, single, special chars) properly
+RALPH_ARGS_FILE="${HOME}/.claude/.ralph-args.tmp"
+if [[ -f "$RALPH_ARGS_FILE" ]]; then
+  RALPH_ARGS=$(cat "$RALPH_ARGS_FILE")
+  rm -f "$RALPH_ARGS_FILE"  # Clean up temp file
+  if [[ -n "$RALPH_ARGS" ]]; then
+    # Use eval to properly interpret quoted arguments
+    # This handles: "speech works", 'single quotes', escaped\ spaces
+    eval set -- "$RALPH_ARGS"
+  fi
+elif [[ -n "${RALPH_ARGS:-}" ]]; then
+  # FALLBACK: Legacy env var method (for backward compatibility)
+  # Note: This has quoting issues with complex arguments
+  eval set -- "$RALPH_ARGS"
 fi
 
 # Parse options and positional arguments
@@ -55,6 +66,7 @@ EXAMPLES:
   /ralph-loop --max-iterations 10 Fix the auth bug
   /ralph-loop Refactor cache layer  (runs forever)
   /ralph-loop --completion-promise 'TASK COMPLETE' Create a REST API
+  /ralph-loop --completion-promise "it's working great" Test with special chars
 
 STOPPING:
   Only by reaching --max-iterations or detecting --completion-promise
