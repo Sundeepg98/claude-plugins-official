@@ -71,11 +71,19 @@ git merge upstream/main
 git push origin main
 ```
 
+## Recent Fixes
+
+| Issue | Status | Solution |
+|-------|--------|----------|
+| Special characters `() [] {}` in prompts | Fixed | `parse_shell_args()` using xargs+bash |
+| Multi-word completion promises | Fixed | Use `+` instead of spaces (e.g., `TASK+COMPLETE`) |
+| Promise matching | Fixed | Both `+` and space versions matched via `completion_promise_alt` |
+
 ## Known Limitations
 
-- **Double quotes in arguments** don't work: `/ralph-loop test "quoted"` will fail
-  - This is a Claude Code limitation, not fixable in plugin
-  - Workaround: Avoid double quotes, use single words for completion promises
+- **Multi-word promises require `+` syntax**: Use `--completion-promise TASK+COMPLETE` instead of `"TASK COMPLETE"`
+  - The `+` is automatically converted to spaces for display and matching
+  - This is a Claude Code `$ARGUMENTS` limitation, not fixable in plugin
 
 ## Files Changed from Upstream
 

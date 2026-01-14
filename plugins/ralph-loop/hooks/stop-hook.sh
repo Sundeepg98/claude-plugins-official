@@ -47,6 +47,11 @@ find_ralph_state() {
     fi
     dir=$(dirname "$dir")
   done
+  # Check root as well
+  if [[ -f "/.claude/ralph-loop.local.md" ]]; then
+    echo "/.claude/ralph-loop.local.md"
+    return 0
+  fi
   return 1
 }
 

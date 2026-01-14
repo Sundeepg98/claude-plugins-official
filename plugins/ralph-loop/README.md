@@ -14,7 +14,7 @@ This plugin implements Ralph using a **Stop hook** that intercepts Claude's exit
 
 ```bash
 # You run ONCE:
-/ralph-loop "Your task description" --completion-promise "DONE"
+/ralph-loop Your task description --completion-promise DONE --max-iterations 20
 
 # Then Claude Code automatically:
 # 1. Works on the task
@@ -35,7 +35,7 @@ This creates a **self-referential feedback loop** where:
 ## Quick Start
 
 ```bash
-/ralph-loop "Build a REST API for todos. Requirements: CRUD operations, input validation, tests. Output <promise>COMPLETE</promise> when done." --completion-promise "COMPLETE" --max-iterations 50
+/ralph-loop Build a REST API for todos with CRUD operations, input validation, and tests --completion-promise COMPLETE --max-iterations 50
 ```
 
 Claude will:
@@ -53,12 +53,29 @@ Start a Ralph loop in your current session.
 
 **Usage:**
 ```bash
-/ralph-loop "<prompt>" --max-iterations <n> --completion-promise "<text>"
+/ralph-loop <prompt> --max-iterations <n> --completion-promise <text>
 ```
 
 **Options:**
 - `--max-iterations <n>` - Stop after N iterations (default: unlimited)
-- `--completion-promise <text>` - Phrase that signals completion
+- `--completion-promise <text>` - Phrase that signals completion (use `+` for spaces)
+
+### Multi-Word Promises
+
+Due to Claude Code's argument handling, use `+` instead of spaces in completion promises:
+
+```bash
+# For multi-word promises, use + instead of spaces:
+/ralph-loop Fix all bugs --completion-promise ALL+TESTS+PASSING --max-iterations 20
+
+# The + is converted to spaces for display and matching
+# Claude outputs: <promise>ALL TESTS PASSING</promise>
+```
+
+Single-word promises work normally:
+```bash
+/ralph-loop Build feature X --completion-promise DONE --max-iterations 10
+```
 
 ### /cancel-ralph
 
