@@ -15,38 +15,30 @@ PROMPT_PARTS=()
 MAX_ITERATIONS=0
 COMPLETION_PROMISE="null"
 
-# ROBUST QUOTING FIX: Read arguments from temp file created by heredoc
-# This preserves all quoting (double, single, special chars) properly
+# Parse shell-style arguments safely using xargs+bash
+# Handles: quotes, parentheses, brackets, braces, special chars
+parse_shell_args() {
+  local input="$1"
+  local quoted_args=""
+  while IFS= read -r word; do
+    [[ -n "$word" ]] && quoted_args+="$(printf '%q ' "$word")"
+  done < <(echo "$input" | xargs bash -c 'for arg; do echo "$arg"; done' _ 2>/dev/null)
+  echo "$quoted_args"
+}
+
+# Read arguments from temp file (preferred) or env var (fallback)
 RALPH_ARGS_FILE="${HOME}/.claude/.ralph-args.tmp"
 if [[ -f "$RALPH_ARGS_FILE" ]]; then
   RALPH_ARGS=$(cat "$RALPH_ARGS_FILE")
-  rm -f "$RALPH_ARGS_FILE"  # Clean up temp file
-  if [[ -n "$RALPH_ARGS" ]]; then
-    # Use xargs + bash to properly parse shell-style arguments
-    # This handles: quotes ('DONE', "multi word"), parentheses (1), 2)), special chars
-    # xargs parses shell quoting, bash loop outputs each arg on separate line
-    # Then printf %q re-escapes for safe eval
-    QUOTED_ARGS=""
-    while IFS= read -r word; do
-      if [[ -n "$word" ]]; then
-        QUOTED_ARGS+="$(printf '%q ' "$word")"
-      fi
-    done < <(echo "$RALPH_ARGS" | xargs bash -c 'for arg; do echo "$arg"; done' _ 2>/dev/null)
-    if [[ -n "$QUOTED_ARGS" ]]; then
-      eval set -- "$QUOTED_ARGS"
-    fi
-  fi
-elif [[ -n "${RALPH_ARGS:-}" ]]; then
-  # FALLBACK: Legacy env var method (for backward compatibility)
-  QUOTED_ARGS=""
-  while IFS= read -r word; do
-    if [[ -n "$word" ]]; then
-      QUOTED_ARGS+="$(printf '%q ' "$word")"
-    fi
-  done < <(echo "$RALPH_ARGS" | xargs bash -c 'for arg; do echo "$arg"; done' _ 2>/dev/null)
-  if [[ -n "$QUOTED_ARGS" ]]; then
-    eval set -- "$QUOTED_ARGS"
-  fi
+  rm -f "$RALPH_ARGS_FILE"
+elif [[ -z "${RALPH_ARGS:-}" ]]; then
+  RALPH_ARGS=""
+fi
+
+# Apply argument parsing if we have args
+if [[ -n "$RALPH_ARGS" ]]; then
+  QUOTED_ARGS=$(parse_shell_args "$RALPH_ARGS")
+  [[ -n "$QUOTED_ARGS" ]] && eval set -- "$QUOTED_ARGS"
 fi
 
 # Parse options and positional arguments
