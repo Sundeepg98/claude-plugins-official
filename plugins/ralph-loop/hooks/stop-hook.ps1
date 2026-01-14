@@ -1,6 +1,10 @@
 # Ralph Loop Stop Hook - PowerShell version for Windows
 # This avoids Git Bash fork() issues on Windows
 
+# Force UTF-8 output encoding for emoji support
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
+
 $ErrorActionPreference = "SilentlyContinue"
 $LogFile = "$env:TEMP\ralph-hook.log"
 
@@ -157,8 +161,8 @@ Set-Content -Path $ralph_state_file -Value $content -NoNewline
 Log "Blocking - iteration $new_iteration"
 
 # Output block decision
-$max_display = if ($max_iterations) { $max_iterations } else { "∞" }
-$reason = "🔄 Ralph Loop - Iteration $new_iteration of $max_display`n`n$prompt"
+$max_display = if ($max_iterations) { $max_iterations } else { "unlimited" }
+$reason = "[Ralph Loop] Iteration $new_iteration of $max_display`n`n$prompt"
 
 @{
     decision = "block"

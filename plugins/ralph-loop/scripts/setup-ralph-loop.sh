@@ -22,14 +22,15 @@ if [[ -f "$RALPH_ARGS_FILE" ]]; then
   RALPH_ARGS=$(cat "$RALPH_ARGS_FILE")
   rm -f "$RALPH_ARGS_FILE"  # Clean up temp file
   if [[ -n "$RALPH_ARGS" ]]; then
-    # Use eval to properly interpret quoted arguments
-    # This handles: "speech works", 'single quotes', escaped\ spaces
-    eval set -- "$RALPH_ARGS"
+    # Use read with IFS to split arguments safely without eval
+    # This avoids interpreting shell metacharacters like ()[]{}
+    IFS=' ' read -r -a args_array <<< "$RALPH_ARGS"
+    set -- "${args_array[@]}"
   fi
 elif [[ -n "${RALPH_ARGS:-}" ]]; then
   # FALLBACK: Legacy env var method (for backward compatibility)
-  # Note: This has quoting issues with complex arguments
-  eval set -- "$RALPH_ARGS"
+  IFS=' ' read -r -a args_array <<< "$RALPH_ARGS"
+  set -- "${args_array[@]}"
 fi
 
 # Parse options and positional arguments
