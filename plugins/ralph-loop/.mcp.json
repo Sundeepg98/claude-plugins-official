@@ -1,0 +1,7 @@
+{
+  "ralph-loop": {
+    "type": "stdio",
+    "command": "python",
+    "args": ["${CLAUDE_PLUGIN_ROOT}/servers/server.py"]
+  }
+}
