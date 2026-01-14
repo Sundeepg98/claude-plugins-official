@@ -22,15 +22,31 @@ if [[ -f "$RALPH_ARGS_FILE" ]]; then
   RALPH_ARGS=$(cat "$RALPH_ARGS_FILE")
   rm -f "$RALPH_ARGS_FILE"  # Clean up temp file
   if [[ -n "$RALPH_ARGS" ]]; then
-    # Use read with IFS to split arguments safely without eval
-    # This avoids interpreting shell metacharacters like ()[]{}
-    IFS=' ' read -r -a args_array <<< "$RALPH_ARGS"
-    set -- "${args_array[@]}"
+    # Use xargs + bash to properly parse shell-style arguments
+    # This handles: quotes ('DONE', "multi word"), parentheses (1), 2)), special chars
+    # xargs parses shell quoting, bash loop outputs each arg on separate line
+    # Then printf %q re-escapes for safe eval
+    QUOTED_ARGS=""
+    while IFS= read -r word; do
+      if [[ -n "$word" ]]; then
+        QUOTED_ARGS+="$(printf '%q ' "$word")"
+      fi
+    done < <(echo "$RALPH_ARGS" | xargs bash -c 'for arg; do echo "$arg"; done' _ 2>/dev/null)
+    if [[ -n "$QUOTED_ARGS" ]]; then
+      eval set -- "$QUOTED_ARGS"
+    fi
   fi
 elif [[ -n "${RALPH_ARGS:-}" ]]; then
   # FALLBACK: Legacy env var method (for backward compatibility)
-  IFS=' ' read -r -a args_array <<< "$RALPH_ARGS"
-  set -- "${args_array[@]}"
+  QUOTED_ARGS=""
+  while IFS= read -r word; do
+    if [[ -n "$word" ]]; then
+      QUOTED_ARGS+="$(printf '%q ' "$word")"
+    fi
+  done < <(echo "$RALPH_ARGS" | xargs bash -c 'for arg; do echo "$arg"; done' _ 2>/dev/null)
+  if [[ -n "$QUOTED_ARGS" ]]; then
+    eval set -- "$QUOTED_ARGS"
+  fi
 fi
 
 # Parse options and positional arguments
@@ -48,8 +64,13 @@ ARGUMENTS:
 
 OPTIONS:
   --max-iterations <n>           Maximum iterations before auto-stop (default: unlimited)
-  --completion-promise '<text>'  Promise phrase (USE QUOTES for multi-word)
+  --completion-promise '<text>'  Promise phrase (use + for spaces: TASK+COMPLETE)
   -h, --help                     Show this help message
+
+NOTE ON MULTI-WORD PROMISES:
+  Due to Claude Code's argument handling, use + instead of spaces:
+    --completion-promise ALL+TESTS+PASSING
+  The + will be converted to spaces for display and matching.
 
 DESCRIPTION:
   Starts a Ralph Loop in your CURRENT session. The stop hook prevents
@@ -154,11 +175,17 @@ fi
 # Create state file for stop hook (markdown with YAML frontmatter)
 mkdir -p "$RALPH_STATE_DIR"
 
-# Quote completion promise for YAML if it contains special chars or is not null
+# Handle completion promise - convert + to spaces for display
+COMPLETION_PROMISE_DISPLAY="$COMPLETION_PROMISE"
 if [[ -n "$COMPLETION_PROMISE" ]] && [[ "$COMPLETION_PROMISE" != "null" ]]; then
+  # Convert + to spaces for human-friendly display
+  COMPLETION_PROMISE_DISPLAY="${COMPLETION_PROMISE//+/ }"
   COMPLETION_PROMISE_YAML="\"$COMPLETION_PROMISE\""
+  # Also store the display version for stop hook to match both formats
+  COMPLETION_PROMISE_ALT_YAML="\"$COMPLETION_PROMISE_DISPLAY\""
 else
   COMPLETION_PROMISE_YAML="null"
+  COMPLETION_PROMISE_ALT_YAML="null"
 fi
 
 cat > "$RALPH_STATE_FILE" <<EOF
@@ -167,6 +194,7 @@ active: true
 iteration: 1
 max_iterations: $MAX_ITERATIONS
 completion_promise: $COMPLETION_PROMISE_YAML
+completion_promise_alt: $COMPLETION_PROMISE_ALT_YAML
 started_at: "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 origin_cwd: "$(pwd)"
 session_id: null
@@ -181,7 +209,7 @@ cat <<EOF
 
 Iteration: 1
 Max iterations: $(if [[ $MAX_ITERATIONS -gt 0 ]]; then echo $MAX_ITERATIONS; else echo "unlimited"; fi)
-Completion promise: $(if [[ "$COMPLETION_PROMISE" != "null" ]]; then echo "${COMPLETION_PROMISE//\"/} (ONLY output when TRUE - do not lie!)"; else echo "none (runs forever)"; fi)
+Completion promise: $(if [[ "$COMPLETION_PROMISE" != "null" ]]; then echo "${COMPLETION_PROMISE_DISPLAY} (ONLY output when TRUE - do not lie!)"; else echo "none (runs forever)"; fi)
 
 The stop hook is now active. When you try to exit, the SAME PROMPT will be
 fed back to you. You'll see your previous work in files, creating a
@@ -209,7 +237,7 @@ if [[ "$COMPLETION_PROMISE" != "null" ]]; then
   echo "═══════════════════════════════════════════════════════════"
   echo ""
   echo "To complete this loop, output this EXACT text:"
-  echo "  <promise>$COMPLETION_PROMISE</promise>"
+  echo "  <promise>$COMPLETION_PROMISE_DISPLAY</promise>"
   echo ""
   echo "STRICT REQUIREMENTS (DO NOT VIOLATE):"
   echo "  ✓ Use <promise> XML tags EXACTLY as shown above"

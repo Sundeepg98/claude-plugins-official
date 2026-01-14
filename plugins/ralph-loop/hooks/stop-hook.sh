@@ -69,6 +69,7 @@ FRONTMATTER=$(sed -n '/^---$/,/^---$/{ /^---$/d; p; }' "$RALPH_STATE_FILE")
 ITERATION=$(echo "$FRONTMATTER" | grep '^iteration:' | sed 's/iteration: *//' || true)
 MAX_ITERATIONS=$(echo "$FRONTMATTER" | grep '^max_iterations:' | sed 's/max_iterations: *//' || true)
 COMPLETION_PROMISE=$(echo "$FRONTMATTER" | grep '^completion_promise:' | sed 's/completion_promise: *//' | sed 's/^"\(.*\)"$/\1/' || true)
+COMPLETION_PROMISE_ALT=$(echo "$FRONTMATTER" | grep '^completion_promise_alt:' | sed 's/completion_promise_alt: *//' | sed 's/^"\(.*\)"$/\1/' || true)
 ORIGIN_CWD=$(echo "$FRONTMATTER" | grep '^origin_cwd:' | sed 's/origin_cwd: *//' | tr -d '"' || true)
 STORED_SESSION=$(echo "$FRONTMATTER" | grep '^session_id:' | sed 's/session_id: *//' | tr -d '"' || true)
 
@@ -107,9 +108,13 @@ if [[ -n "$COMPLETION_PROMISE" ]] && [[ "$COMPLETION_PROMISE" != "null" ]]; then
       LAST_OUTPUT=$(echo "$LAST_LINE" | jq -r '.message.content | map(select(.type == "text")) | map(.text) | join("\n")' 2>/dev/null || echo "")
       if [[ -n "$LAST_OUTPUT" ]]; then
         PROMISE_TEXT=$(echo "$LAST_OUTPUT" | perl -0777 -pe 's/.*?<promise>(.*?)<\/promise>.*/$1/s; s/^\s+|\s+$//g; s/\s+/ /g' 2>/dev/null || echo "")
-        if [[ -n "$PROMISE_TEXT" ]] && [[ "$PROMISE_TEXT" = "$COMPLETION_PROMISE" ]]; then
-          rm "$RALPH_STATE_FILE"
-          allow_exit
+        # Match either the original promise (with +) or alternate (with spaces)
+        if [[ -n "$PROMISE_TEXT" ]]; then
+          if [[ "$PROMISE_TEXT" = "$COMPLETION_PROMISE" ]] || [[ "$PROMISE_TEXT" = "$COMPLETION_PROMISE_ALT" ]]; then
+            log "Promise matched! Text: $PROMISE_TEXT"
+            rm "$RALPH_STATE_FILE"
+            allow_exit
+          fi
         fi
       fi
     fi

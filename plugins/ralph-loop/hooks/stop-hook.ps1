@@ -71,6 +71,7 @@ $frontmatter = $frontmatter_match.Groups[1].Value
 $iteration = 0
 $max_iterations = $null
 $completion_promise = $null
+$completion_promise_alt = $null
 $origin_cwd = $null
 $stored_session = $null
 
@@ -78,6 +79,7 @@ foreach ($line in $frontmatter -split "`n") {
     if ($line -match '^iteration:\s*(\d+)') { $iteration = [int]$Matches[1] }
     if ($line -match '^max_iterations:\s*(\d+)') { $max_iterations = [int]$Matches[1] }
     if ($line -match '^completion_promise:\s*"?([^"]+)"?') { $completion_promise = $Matches[1] }
+    if ($line -match '^completion_promise_alt:\s*"?([^"]+)"?') { $completion_promise_alt = $Matches[1] }
     if ($line -match '^origin_cwd:\s*"?([^"]+)"?') { $origin_cwd = $Matches[1] }
     if ($line -match '^session_id:\s*"?([^"]+)"?') { $stored_session = $Matches[1] }
 }
@@ -127,7 +129,7 @@ if ($max_iterations -and $iteration -ge $max_iterations) {
     Allow-Exit
 }
 
-# Check completion promise
+# Check completion promise (match either original with + or alternate with spaces)
 if ($completion_promise -and $completion_promise -ne "null" -and (Test-Path $transcript_path)) {
     $transcript_content = Get-Content $transcript_path -Raw
     $assistant_lines = $transcript_content -split "`n" | Where-Object { $_ -match '"role":"assistant"' }
@@ -138,8 +140,9 @@ if ($completion_promise -and $completion_promise -ne "null" -and (Test-Path $tra
             $text_content = ($msg.message.content | Where-Object { $_.type -eq "text" } | ForEach-Object { $_.text }) -join "`n"
             if ($text_content -match '<promise>([^<]+)</promise>') {
                 $promise_text = $Matches[1].Trim() -replace '\s+', ' '
-                if ($promise_text -eq $completion_promise) {
-                    Log "Promise matched, completing"
+                # Match either the original promise (with +) or alternate (with spaces)
+                if ($promise_text -eq $completion_promise -or $promise_text -eq $completion_promise_alt) {
+                    Log "Promise matched: $promise_text"
                     Remove-Item $ralph_state_file -Force
                     Allow-Exit
                 }
